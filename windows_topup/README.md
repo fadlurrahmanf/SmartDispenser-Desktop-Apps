@@ -1,5 +1,12 @@
 # SmartDispenser Top-up Windows
 
+## Unduh installer Windows
+
+[Unduh SmartDispenserTopupSetup.exe](https://github.com/fadlurrahmanf/SmartDispenser-Desktop-Apps/releases/download/v1.0.0/SmartDispenserTopupSetup.exe)
+
+Jalankan setup sebagai Administrator dan ikuti wizard instalasi. Paket Release
+menyertakan prerequisite untuk pemasangan pada komputer Windows baru.
+
 Aplikasi desktop Windows berbahasa Indonesia untuk operator top-up. Aplikasi
 tidak mengakses perintah PN532 mentah, kunci kartu, APDU, atau data blok NFC.
 Reader USB hanya bridge domain-terbatas.

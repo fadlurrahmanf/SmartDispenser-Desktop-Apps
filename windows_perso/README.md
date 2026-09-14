@@ -1,5 +1,12 @@
 # SmartDispenser Personalization Console
 
+## Unduh installer Windows
+
+[Unduh SmartDispenserPersoSetup.exe](https://github.com/fadlurrahmanf/SmartDispenser-Desktop-Apps/releases/download/v1.0.0/SmartDispenserPersoSetup.exe)
+
+Jalankan setup sebagai Administrator dan ikuti wizard instalasi. Paket Release
+menyertakan prerequisite untuk pemasangan pada komputer Windows baru.
+
 Folder ini adalah satu-satunya aplikasi desktop Perso aktif/default untuk
 SmartDispenser. Antarmuka operator menggunakan HTML/WebView2 dengan backend
 Python yang mengelola Database, serial bridge, customer, Card Precheck,
