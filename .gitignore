@@ -1,0 +1,49 @@
+# Build outputs
+build/
+out/
+Debug/
+Release/
+.pio/
+
+# Tool and editor caches
+.cache/
+.clangd/
+.idea/
+.vs/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local logs and temporary files
+*.log
+*.tmp
+*.bak
+*~
+
+# Recoverable legacy application archives stay local and out of repo views
+/backups/
+/windows_perso/installer/prerequisites/
+/windows_perso/installer/output/
+/windows_perso/release*/
+/windows_topup/installer/prerequisites/
+/windows_topup/installer/output/
+/windows_topup/build*/
+/windows_topup/dist*/
+/windows_topup/release*/
+/windows_topup/app.py
+/windows_topup/SmartDispenserTopupPersoStyle.spec
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Credentials and local environment overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.provisioning.json
+*.provisioning.bin
+.private/

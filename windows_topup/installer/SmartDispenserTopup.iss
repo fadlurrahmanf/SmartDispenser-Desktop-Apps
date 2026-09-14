@@ -1,0 +1,133 @@
+#define AppName "SmartDispenser Topup"
+#define AppVersion "1.0.0"
+#define AppPublisher "SmartDispenser"
+#define AppExeName "SmartDispenserTopup.exe"
+
+[Setup]
+AppId={{A67A78F4-78C5-40BB-93E5-7D8868C44BD1}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppPublisher={#AppPublisher}
+DefaultDirName={autopf}\SmartDispenser Topup
+DefaultGroupName=SmartDispenser
+DisableProgramGroupPage=yes
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+PrivilegesRequired=admin
+OutputDir=output
+OutputBaseFilename=SmartDispenserTopupSetup
+Compression=lzma2/ultra64
+SolidCompression=yes
+WizardStyle=modern
+CloseApplications=yes
+RestartApplications=no
+UninstallDisplayIcon={app}\{#AppExeName}
+SetupLogging=yes
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Files]
+Source: "..\release_installer_ready_v11\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "configure_database.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
+Source: "..\schema.sql"; DestDir: "{tmp}"; Flags: deleteafterinstall
+Source: "prerequisites\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+Source: "prerequisites\mariadb-11.8.9-winx64.msi"; DestDir: "{tmp}"; Flags: deleteafterinstall
+Source: "prerequisites\ch340\*"; DestDir: "{tmp}\ch340"; Flags: recursesubdirs createallsubdirs deleteafterinstall
+
+[Icons]
+Name: "{autoprograms}\SmartDispenser\SmartDispenser Topup"; Filename: "{app}\{#AppExeName}"
+Name: "{autodesktop}\SmartDispenser Topup"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+
+[Tasks]
+Name: "desktopicon"; Description: "Buat shortcut di Desktop"; GroupDescription: "Shortcut tambahan:"; Flags: checkedonce
+
+[Run]
+Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "Memastikan Microsoft Edge WebView2 Runtime..."; Flags: waituntilterminated runhidden; Check: not SkipPrerequisites
+Filename: "{sys}\pnputil.exe"; Parameters: "/add-driver ""{tmp}\ch340\CH341SER.INF"" /install"; StatusMsg: "Memasang driver USB-Serial CH340..."; Flags: waituntilterminated runhidden; Check: not SkipPrerequisites
+Filename: "{sys}\msiexec.exe"; Parameters: "/i ""{tmp}\mariadb-11.8.9-winx64.msi"" /qn /norestart PASSWORD=""{code:GetDatabaseAdminPassword}"" SERVICENAME=SmartDispenserMariaDB PORT=3306 ADDLOCAL=DBInstance,Client,MYSQLSERVER,SharedLibraries REMOVE=DEVEL,HeidiSQL"; StatusMsg: "Memasang Database lokal MariaDB..."; Flags: waituntilterminated runhidden dontlogparameters; Check: InstallLocalDatabase
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{tmp}\configure_database.ps1"" -SchemaPath ""{tmp}\schema.sql"" -AdminPassword ""{code:GetDatabaseAdminPassword}"""; StatusMsg: "Membuat Database dan akun aplikasi Topup..."; Flags: waituntilterminated runhidden dontlogparameters; Check: ConfigureDatabase
+Filename: "{app}\{#AppExeName}"; Description: "Jalankan SmartDispenser Topup"; Flags: nowait postinstall skipifsilent
+
+[Code]
+var
+  DatabasePage: TInputQueryWizardPage;
+  DatabaseAlreadyInstalled: Boolean;
+
+function HasDatabaseService: Boolean;
+begin
+  Result :=
+    RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\SmartDispenserMariaDB') or
+    RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\MariaDB') or
+    RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\mysql') or
+    RegKeyExists(HKLM32, 'SYSTEM\CurrentControlSet\Services\SmartDispenserMariaDB') or
+    RegKeyExists(HKLM32, 'SYSTEM\CurrentControlSet\Services\MariaDB') or
+    RegKeyExists(HKLM32, 'SYSTEM\CurrentControlSet\Services\mysql') or
+    FileExists(ExpandConstant('{sd}\xampp\mysql\bin\mysql.exe'));
+end;
+
+function CommandLineHas(const Name: String): Boolean;
+begin
+  Result := Pos('/' + Uppercase(Name), Uppercase(GetCmdTail)) > 0;
+end;
+
+function SkipPrerequisites: Boolean;
+begin
+  Result := CommandLineHas('SKIPPREREQUISITES');
+end;
+
+function InstallLocalDatabase: Boolean;
+begin
+  Result := (not CommandLineHas('SKIPDATABASE')) and (not DatabaseAlreadyInstalled);
+end;
+
+function ConfigureDatabase: Boolean;
+begin
+  Result := not CommandLineHas('SKIPDATABASE');
+end;
+
+function GetDatabaseAdminPassword(Param: String): String;
+begin
+  Result := DatabasePage.Values[0];
+end;
+
+procedure InitializeWizard;
+begin
+  DatabaseAlreadyInstalled := HasDatabaseService;
+  DatabasePage := CreateInputQueryPage(
+    wpSelectTasks,
+    'Konfigurasi Database',
+    'Masukkan password administrator Database lokal.',
+    'Pada komputer baru, password ini akan menjadi password root MariaDB. ' +
+    'Pada komputer yang sudah memiliki MySQL/MariaDB, masukkan password root yang berlaku. ' +
+    'Password tidak disimpan oleh aplikasi Topup.');
+  DatabasePage.Add('Password administrator:', True);
+  DatabasePage.Add('Ulangi password:', True);
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if (PageID = DatabasePage.ID) and CommandLineHas('SKIPDATABASE') then
+    Result := True;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID = DatabasePage.ID then
+  begin
+    if DatabasePage.Values[0] <> DatabasePage.Values[1] then
+    begin
+      MsgBox('Password administrator dan ulangannya tidak sama.', mbError, MB_OK);
+      Result := False;
+      exit;
+    end;
+    if (not DatabaseAlreadyInstalled) and (Length(DatabasePage.Values[0]) < 10) then
+    begin
+      MsgBox('Untuk Database baru, gunakan password administrator minimal 10 karakter.', mbError, MB_OK);
+      Result := False;
+      exit;
+    end;
+  end;
+end;
