@@ -16,10 +16,17 @@ param(
     [string]$OperatorPin = "202610",
 
     [Parameter(Mandatory = $false)]
+    [string]$SuccessMarker = "",
+
+    [Parameter(Mandatory = $false)]
     [switch]$SkipConfigWrite
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($SuccessMarker -and (Test-Path -LiteralPath $SuccessMarker)) {
+    Remove-Item -LiteralPath $SuccessMarker -Force
+}
 
 if (-not (Test-Path -LiteralPath $SchemaPath)) {
     throw "Topup Database schema was not found: $SchemaPath"
@@ -67,6 +74,17 @@ function Find-DatabaseClient {
     throw "MariaDB/MySQL client was not found after Database installation."
 }
 
+function Wait-ForDatabase([string]$Client, [string]$DefaultsFile) {
+    for ($attempt = 1; $attempt -le 30; $attempt++) {
+        & $Client "--defaults-extra-file=$DefaultsFile" "--connect-timeout=2" "--execute=SELECT 1" 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+        Start-Sleep -Seconds 1
+    }
+    throw "Database did not accept the administrator credentials within 30 seconds. Check the root password and Database service."
+}
+
 function New-RandomSecret {
     $bytes = New-Object byte[] 24
     $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
@@ -97,6 +115,7 @@ $client = Find-DatabaseClient
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("SmartDispenserTopupDb_" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 $defaultsFile = Join-Path $tempRoot "admin.cnf"
+$appDefaultsFile = Join-Path $tempRoot "app.cnf"
 $provisionSql = Join-Path $tempRoot "provision.sql"
 
 try {
@@ -110,6 +129,7 @@ try {
         "protocol=tcp"
     )
     [IO.File]::WriteAllLines($defaultsFile, $defaults, [Text.UTF8Encoding]::new($false))
+    Wait-ForDatabase $client $defaultsFile
 
     $appUser = "sd_topup_app"
     $appPassword = New-RandomSecret
@@ -165,6 +185,22 @@ FLUSH PRIVILEGES;
         throw "Topup account provisioning failed with exit code $LASTEXITCODE."
     }
 
+    $escapedAppPassword = $appPassword.Replace("\", "\\").Replace('"', '\"')
+    $appDefaults = @(
+        "[client]",
+        "host=$HostName",
+        "port=$Port",
+        "user=$appUser",
+        "password=`"$escapedAppPassword`"",
+        "protocol=tcp"
+    )
+    [IO.File]::WriteAllLines($appDefaultsFile, $appDefaults, [Text.UTF8Encoding]::new($false))
+    $verification = "SELECT COUNT(*) FROM operators WHERE username='admin' AND enabled=1;"
+    & $client "--defaults-extra-file=$appDefaultsFile" "--batch" "--skip-column-names" "--execute=$verification" smartdispenser_topup | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Topup application account verification failed with exit code $LASTEXITCODE."
+    }
+
     if (-not $SkipConfigWrite) {
         $configDirectory = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "SmartDispenserTopup"
         New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
@@ -177,7 +213,13 @@ FLUSH PRIVILEGES;
             operator_pin_secret = Protect-ForCurrentUser $OperatorPin
         }
         $configPath = Join-Path $configDirectory "config.json"
-        [IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+        $configTempPath = Join-Path $configDirectory "config.json.new"
+        [IO.File]::WriteAllText($configTempPath, ($config | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $configTempPath -Destination $configPath -Force
+    }
+
+    if ($SuccessMarker) {
+        [IO.File]::WriteAllText($SuccessMarker, "database-ready", [Text.UTF8Encoding]::new($false))
     }
 }
 finally {

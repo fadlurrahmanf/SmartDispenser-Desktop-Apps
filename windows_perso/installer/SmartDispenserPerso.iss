@@ -1,5 +1,5 @@
 #define AppName "SmartDispenser Perso"
-#define AppVersion "1.0.0"
+#define AppVersion "1.0.1"
 #define AppPublisher "SmartDispenser"
 #define AppExeName "SmartDispenserPerso.exe"
 
@@ -45,7 +45,7 @@ Name: "desktopicon"; Description: "Buat shortcut di Desktop"; GroupDescription: 
 Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "Memastikan Microsoft Edge WebView2 Runtime..."; Flags: waituntilterminated runhidden; Check: not SkipPrerequisites
 Filename: "{sys}\pnputil.exe"; Parameters: "/add-driver ""{tmp}\ch340\CH341SER.INF"" /install"; StatusMsg: "Memasang driver USB-Serial CH340..."; Flags: waituntilterminated runhidden; Check: not SkipPrerequisites
 Filename: "{sys}\msiexec.exe"; Parameters: "/i ""{tmp}\mariadb-11.8.9-winx64.msi"" /qn /norestart PASSWORD=""{code:GetDatabaseAdminPassword}"" SERVICENAME=SmartDispenserMariaDB PORT=3306 ADDLOCAL=DBInstance,Client,MYSQLSERVER,SharedLibraries REMOVE=DEVEL,HeidiSQL"; StatusMsg: "Memasang Database lokal MariaDB..."; Flags: waituntilterminated runhidden dontlogparameters; Check: InstallLocalDatabase
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{tmp}\configure_database.ps1"" -AdminPassword ""{code:GetDatabaseAdminPassword}"""; StatusMsg: "Membuat Database dan akun aplikasi..."; Flags: waituntilterminated runhidden dontlogparameters; Check: ConfigureDatabase
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{tmp}\configure_database.ps1"" -AdminPassword ""{code:GetDatabaseAdminPassword}"" -SuccessMarker ""{tmp}\perso-database-ready.marker"""; StatusMsg: "Membuat dan memverifikasi Database aplikasi Perso..."; Flags: waituntilterminated runhidden dontlogparameters; Check: ConfigureDatabase; AfterInstall: VerifyDatabaseProvisioning
 Filename: "{app}\{#AppExeName}"; Description: "Jalankan SmartDispenser Perso"; Flags: nowait postinstall skipifsilent
 
 [Code]
@@ -61,7 +61,8 @@ begin
     RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\mysql') or
     RegKeyExists(HKLM32, 'SYSTEM\CurrentControlSet\Services\SmartDispenserMariaDB') or
     RegKeyExists(HKLM32, 'SYSTEM\CurrentControlSet\Services\MariaDB') or
-    RegKeyExists(HKLM32, 'SYSTEM\CurrentControlSet\Services\mysql');
+    RegKeyExists(HKLM32, 'SYSTEM\CurrentControlSet\Services\mysql') or
+    FileExists(ExpandConstant('{sd}\xampp\mysql\bin\mysql.exe'));
 end;
 
 function CommandLineHas(const Name: String): Boolean;
@@ -96,11 +97,20 @@ begin
     wpSelectTasks,
     'Konfigurasi Database',
     'Masukkan password administrator Database lokal.',
-    'Pada komputer baru, password ini akan menjadi password root MariaDB. ' +
-    'Pada komputer yang sudah memiliki MySQL/MariaDB, masukkan password root yang berlaku. ' +
+    'Pada komputer baru, buat password root MariaDB minimal 10 karakter. ' +
+    'Jika XAMPP masih memakai root tanpa password, kosongkan kedua kolom. ' +
+    'Jika MySQL/MariaDB sudah memakai password, masukkan password root yang berlaku. ' +
     'Password tidak dimasukkan ke source atau EXE aplikasi.');
   DatabasePage.Add('Password administrator:', True);
   DatabasePage.Add('Ulangi password:', True);
+end;
+
+procedure VerifyDatabaseProvisioning;
+begin
+  if not FileExists(ExpandConstant('{tmp}\perso-database-ready.marker')) then
+    RaiseException(
+      'Konfigurasi Database Perso gagal. Setup dihentikan agar aplikasi tidak dipasang dengan konfigurasi yang rusak. ' +
+      'Periksa password root MySQL/MariaDB, pastikan service Database berjalan, lalu jalankan setup kembali.');
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;

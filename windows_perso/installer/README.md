@@ -9,10 +9,18 @@
 - Database `Perso_database` dan akun aplikasi dengan password acak;
 - shortcut Start Menu dan Desktop.
 
+Setup hanya dinyatakan berhasil setelah akun aplikasi dapat membuka
+`Perso_database`. Jika password `root` salah atau Database tidak siap, setup
+berhenti dengan pesan perbaikan dan tidak menjalankan aplikasi menggunakan
+konfigurasi lama.
+
 Installer meminta password administrator Database. Password akun aplikasi dibuat
 secara acak ketika instalasi dan disimpan sebagai environment variable milik user
 Windows, sesuai kontrak aplikasi saat ini. Credential dari komputer build tidak
 pernah dimasukkan ke installer.
+
+Jika XAMPP masih memakai akun `root` tanpa password, kosongkan kedua kolom
+password pada wizard. Untuk Database baru, buat password minimal 10 karakter.
 
 ## Build
 

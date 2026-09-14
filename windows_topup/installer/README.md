@@ -10,10 +10,18 @@
 - konfigurasi aplikasi yang dilindungi Windows DPAPI;
 - shortcut Start Menu dan Desktop.
 
+Setup hanya dinyatakan berhasil setelah akun aplikasi dapat membuka schema
+Topup dan data operator terverifikasi. Jika password `root` salah atau Database
+tidak siap, setup berhenti dengan pesan perbaikan dan tidak menjalankan
+aplikasi menggunakan konfigurasi lama.
+
 Setup meminta password administrator Database. Password itu hanya dipakai selama
 provisioning dan tidak disimpan oleh aplikasi. Password akun aplikasi dibuat acak,
 sedangkan PIN operator Topup ditetapkan ke `202610`; keduanya disimpan terenkripsi
 untuk user Windows yang menjalankan installer.
+
+Jika XAMPP masih memakai akun `root` tanpa password, kosongkan kedua kolom
+password pada wizard. Untuk Database baru, buat password minimal 10 karakter.
 
 ## Build
 

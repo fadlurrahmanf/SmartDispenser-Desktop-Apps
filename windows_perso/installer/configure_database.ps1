@@ -10,10 +10,17 @@ param(
     [int]$Port = 3306,
 
     [Parameter(Mandatory = $false)]
+    [string]$SuccessMarker = "",
+
+    [Parameter(Mandatory = $false)]
     [switch]$SkipEnvironmentWrite
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($SuccessMarker -and (Test-Path -LiteralPath $SuccessMarker)) {
+    Remove-Item -LiteralPath $SuccessMarker -Force
+}
 
 foreach ($serviceName in @("SmartDispenserMariaDB", "MariaDB", "mysql")) {
     $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -54,6 +61,17 @@ function Find-MariaDbClient {
     throw "MariaDB/MySQL client was not found after Database installation."
 }
 
+function Wait-ForDatabase([string]$Client, [string]$DefaultsFile) {
+    for ($attempt = 1; $attempt -le 30; $attempt++) {
+        & $Client "--defaults-extra-file=$DefaultsFile" "--connect-timeout=2" "--execute=SELECT 1" 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+        Start-Sleep -Seconds 1
+    }
+    throw "Database did not accept the administrator credentials within 30 seconds. Check the root password and Database service."
+}
+
 function New-SecureAppPassword {
     $bytes = New-Object byte[] 24
     $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
@@ -70,6 +88,7 @@ $client = Find-MariaDbClient
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("SmartDispenserDb_" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 $defaultsFile = Join-Path $tempRoot "admin.cnf"
+$appDefaultsFile = Join-Path $tempRoot "app.cnf"
 $sqlFile = Join-Path $tempRoot "provision.sql"
 
 try {
@@ -83,6 +102,7 @@ try {
         "protocol=tcp"
     )
     [IO.File]::WriteAllLines($defaultsFile, $defaults, [Text.UTF8Encoding]::new($false))
+    Wait-ForDatabase $client $defaultsFile
 
     $appUser = "perso_console_app"
     $appPassword = New-SecureAppPassword
@@ -103,6 +123,21 @@ FLUSH PRIVILEGES;
         throw "Database provisioning failed with exit code $LASTEXITCODE."
     }
 
+    $escapedAppPassword = $appPassword.Replace("\", "\\").Replace('"', '\"')
+    $appDefaults = @(
+        "[client]",
+        "host=$HostName",
+        "port=$Port",
+        "user=$appUser",
+        "password=`"$escapedAppPassword`"",
+        "protocol=tcp"
+    )
+    [IO.File]::WriteAllLines($appDefaultsFile, $appDefaults, [Text.UTF8Encoding]::new($false))
+    & $client "--defaults-extra-file=$appDefaultsFile" "--batch" "--skip-column-names" "--execute=SELECT 1" Perso_database | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Perso application account verification failed with exit code $LASTEXITCODE."
+    }
+
     if (-not $SkipEnvironmentWrite) {
         $environmentKey = "HKCU:\Environment"
         New-Item -Path $environmentKey -Force | Out-Null
@@ -115,6 +150,10 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wP
 "@
         $broadcastResult = [UIntPtr]::Zero
         [void][Win32.NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x001A, [UIntPtr]::Zero, "Environment", 2, 5000, [ref]$broadcastResult)
+    }
+
+    if ($SuccessMarker) {
+        [IO.File]::WriteAllText($SuccessMarker, "database-ready", [Text.UTF8Encoding]::new($false))
     }
 }
 finally {
