@@ -2,7 +2,7 @@
 
 ## Unduh installer Windows
 
-[Unduh SmartDispenserTopupSetup.exe](https://github.com/fadlurrahmanf/SmartDispenser-Desktop-Apps/releases/download/v1.0.1/SmartDispenserTopupSetup.exe)
+[Unduh SmartDispenserTopupSetup.exe](https://github.com/fadlurrahmanf/SmartDispenser-Desktop-Apps/releases/download/v1.0.2/SmartDispenserTopupSetup.exe)
 
 Jalankan setup sebagai Administrator dan ikuti wizard instalasi. Paket Release
 menyertakan prerequisite untuk pemasangan pada komputer Windows baru.

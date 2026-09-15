@@ -177,15 +177,25 @@ class TopupCoreTest(unittest.TestCase):
     store.set_distribution_quota(30)
  def test_saved_config_protects_app_password_and_operator_pin(self):
   with tempfile.TemporaryDirectory() as directory:
-   def fake_dpapi(value,protect):return b"protected:"+value if protect else value.removeprefix(b"protected:")
+   def fake_dpapi(value,protect,machine=False):return b"protected:"+value if protect else value.removeprefix(b"protected:")
    config={"host":"127.0.0.1","port":3306,"admin_user":"root","admin_password":"not-saved","app_user":"sd_topup_app","app_password":"app-secret","operator_pin":"202610"}
-   with patch.object(topup_core,"APP_DIR",Path(directory)),patch.object(topup_core,"_dpapi",side_effect=fake_dpapi):
+   with patch.object(topup_core,"APP_DIR",Path(directory)),patch.object(topup_core,"MACHINE_CONFIG_PATH",Path(directory,"missing-machine-config.json")),patch.object(topup_core,"_dpapi",side_effect=fake_dpapi):
     topup_core.save_config(config)
     raw=json.loads(Path(directory,"config.json").read_text(encoding="utf-8"))
     self.assertNotIn("admin_password",raw);self.assertNotIn("app_password",raw);self.assertNotIn("operator_pin",raw)
     loaded=topup_core.load_config()
    self.assertEqual(loaded["app_password"],"app-secret")
    self.assertEqual(loaded["operator_pin"],"202610")
+ def test_machine_config_is_preferred_over_stale_user_config(self):
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory);machine=root/"machine.json";user_dir=root/"user";user_dir.mkdir()
+   machine.write_text(json.dumps({"host":"127.0.0.1","port":3306,"admin_user":"root","app_user":"sd_topup_app","scope":"machine","app_secret":"bWFjaGluZQ==","operator_pin_secret":"cGlu"}),encoding="utf-8")
+   (user_dir/"config.json").write_text(json.dumps({"host":"stale","port":3306,"app_user":"stale","app_secret":"c3RhbGU="}),encoding="utf-8")
+   with patch.object(topup_core,"MACHINE_CONFIG_PATH",machine),patch.object(topup_core,"APP_DIR",user_dir),patch.object(topup_core,"_dpapi",side_effect=lambda value,protect,machine=False:value):
+    loaded=topup_core.load_config()
+   self.assertEqual(loaded["app_user"],"sd_topup_app")
+   self.assertEqual(loaded["app_password"],"machine")
+   self.assertEqual(loaded["operator_pin"],"pin")
  def test_positive_topup_cannot_exceed_distribution_quota(self):
   store=MySqlStore({})
   overview={"quota_configured":True,"allocated_liter":95,"quota_limit_liter":100}

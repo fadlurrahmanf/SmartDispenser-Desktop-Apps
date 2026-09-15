@@ -1,5 +1,5 @@
 #define AppName "SmartDispenser Topup"
-#define AppVersion "1.0.1"
+#define AppVersion "1.0.2"
 #define AppPublisher "SmartDispenser"
 #define AppExeName "SmartDispenserTopup.exe"
 
@@ -28,8 +28,9 @@ SetupLogging=yes
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "..\release_installer_ready_v11\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\release_machine_config_v12\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "configure_database.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
+Source: "install_prerequisites.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "..\schema.sql"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "prerequisites\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "prerequisites\mariadb-11.8.9-winx64.msi"; DestDir: "{tmp}"; Flags: deleteafterinstall
@@ -43,8 +44,7 @@ Name: "{autodesktop}\SmartDispenser Topup"; Filename: "{app}\{#AppExeName}"; Tas
 Name: "desktopicon"; Description: "Buat shortcut di Desktop"; GroupDescription: "Shortcut tambahan:"; Flags: checkedonce
 
 [Run]
-Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "Memastikan Microsoft Edge WebView2 Runtime..."; Flags: waituntilterminated runhidden; Check: not SkipPrerequisites
-Filename: "{sys}\pnputil.exe"; Parameters: "/add-driver ""{tmp}\ch340\CH341SER.INF"" /install"; StatusMsg: "Memasang driver USB-Serial CH340..."; Flags: waituntilterminated runhidden; Check: not SkipPrerequisites
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{tmp}\install_prerequisites.ps1"" -WebViewInstaller ""{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"" -DriverInf ""{tmp}\ch340\CH341SER.INF"" -SuccessMarker ""{tmp}\topup-prerequisites-ready.marker"""; StatusMsg: "Memasang dan memverifikasi WebView2 serta driver CH340..."; Flags: waituntilterminated runhidden; Check: not SkipPrerequisites; AfterInstall: VerifyPrerequisiteInstallation
 Filename: "{sys}\msiexec.exe"; Parameters: "/i ""{tmp}\mariadb-11.8.9-winx64.msi"" /qn /norestart PASSWORD=""{code:GetDatabaseAdminPassword}"" SERVICENAME=SmartDispenserMariaDB PORT=3306 ADDLOCAL=DBInstance,Client,MYSQLSERVER,SharedLibraries REMOVE=DEVEL,HeidiSQL"; StatusMsg: "Memasang Database lokal MariaDB..."; Flags: waituntilterminated runhidden dontlogparameters; Check: InstallLocalDatabase
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{tmp}\configure_database.ps1"" -SchemaPath ""{tmp}\schema.sql"" -AdminPassword ""{code:GetDatabaseAdminPassword}"" -SuccessMarker ""{tmp}\topup-database-ready.marker"""; StatusMsg: "Membuat dan memverifikasi Database aplikasi Topup..."; Flags: waituntilterminated runhidden dontlogparameters; Check: ConfigureDatabase; AfterInstall: VerifyDatabaseProvisioning
 Filename: "{app}\{#AppExeName}"; Description: "Jalankan SmartDispenser Topup"; Flags: nowait postinstall skipifsilent
@@ -88,7 +88,10 @@ end;
 
 function GetDatabaseAdminPassword(Param: String): String;
 begin
-  Result := DatabasePage.Values[0];
+  if DatabasePage.Values[0] = '' then
+    Result := '__SMARTDISPENSER_EMPTY_PASSWORD__'
+  else
+    Result := DatabasePage.Values[0];
 end;
 
 procedure InitializeWizard;
@@ -112,6 +115,14 @@ begin
     RaiseException(
       'Konfigurasi Database Topup gagal. Setup dihentikan agar aplikasi tidak dipasang dengan konfigurasi yang rusak. ' +
       'Periksa password root MySQL/MariaDB, pastikan service Database berjalan, lalu jalankan setup kembali.');
+end;
+
+procedure VerifyPrerequisiteInstallation;
+begin
+  if not FileExists(ExpandConstant('{tmp}\topup-prerequisites-ready.marker')) then
+    RaiseException(
+      'WebView2 atau driver CH340 gagal dipasang. Setup dihentikan agar aplikasi tidak dipasang dalam kondisi belum siap. ' +
+      'Jalankan setup kembali sebagai Administrator. Jika tetap gagal, periksa kebijakan instalasi driver Windows.');
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;

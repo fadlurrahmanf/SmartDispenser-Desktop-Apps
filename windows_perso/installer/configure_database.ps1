@@ -17,6 +17,23 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Security
+
+if ($AdminPassword -eq "__SMARTDISPENSER_EMPTY_PASSWORD__") {
+    $AdminPassword = ""
+}
+
+$diagnosticDirectory = Join-Path $env:ProgramData "SmartDispenser"
+$diagnosticLog = Join-Path $diagnosticDirectory "perso-installer-database.log"
+New-Item -ItemType Directory -Path $diagnosticDirectory -Force | Out-Null
+"[$(Get-Date -Format o)] Perso database provisioning started." | Set-Content -LiteralPath $diagnosticLog -Encoding UTF8
+trap {
+    "[$(Get-Date -Format o)] $($_ | Out-String)" | Add-Content -LiteralPath $diagnosticLog -Encoding UTF8
+    if ($_.ScriptStackTrace) {
+        $_.ScriptStackTrace | Add-Content -LiteralPath $diagnosticLog -Encoding UTF8
+    }
+    exit 1
+}
 
 if ($SuccessMarker -and (Test-Path -LiteralPath $SuccessMarker)) {
     Remove-Item -LiteralPath $SuccessMarker -Force
@@ -84,6 +101,16 @@ function New-SecureAppPassword {
     return [Convert]::ToBase64String($bytes).TrimEnd("=").Replace("+", "A").Replace("/", "B")
 }
 
+function Protect-ForMachine([string]$Value) {
+    $plain = [Text.Encoding]::UTF8.GetBytes($Value)
+    $protected = [Security.Cryptography.ProtectedData]::Protect(
+        $plain,
+        $null,
+        [Security.Cryptography.DataProtectionScope]::LocalMachine
+    )
+    return [Convert]::ToBase64String($protected)
+}
+
 $client = Find-MariaDbClient
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("SmartDispenserDb_" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
@@ -139,21 +166,24 @@ FLUSH PRIVILEGES;
     }
 
     if (-not $SkipEnvironmentWrite) {
-        $environmentKey = "HKCU:\Environment"
-        New-Item -Path $environmentKey -Force | Out-Null
-        New-ItemProperty -Path $environmentKey -Name "SMARTDISPENSER_MYSQL_USER" -Value $appUser -PropertyType String -Force | Out-Null
-        New-ItemProperty -Path $environmentKey -Name "SMARTDISPENSER_MYSQL_PASSWORD" -Value $appPassword -PropertyType String -Force | Out-Null
-
-        Add-Type -Namespace Win32 -Name NativeMethods -MemberDefinition @"
-[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);
-"@
-        $broadcastResult = [UIntPtr]::Zero
-        [void][Win32.NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x001A, [UIntPtr]::Zero, "Environment", 2, 5000, [ref]$broadcastResult)
+        $configDirectory = Join-Path $env:ProgramData "SmartDispenser\Perso"
+        New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
+        $config = [ordered]@{
+            host = $HostName
+            port = $Port
+            app_user = $appUser
+            scope = "machine"
+            app_secret = Protect-ForMachine $appPassword
+        }
+        $configPath = Join-Path $configDirectory "config.json"
+        $configTempPath = Join-Path $configDirectory "config.json.new"
+        [IO.File]::WriteAllText($configTempPath, ($config | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $configTempPath -Destination $configPath -Force
     }
 
     if ($SuccessMarker) {
         [IO.File]::WriteAllText($SuccessMarker, "database-ready", [Text.UTF8Encoding]::new($false))
+        "[$(Get-Date -Format o)] Perso database provisioning verified." | Add-Content -LiteralPath $diagnosticLog -Encoding UTF8
     }
 }
 finally {

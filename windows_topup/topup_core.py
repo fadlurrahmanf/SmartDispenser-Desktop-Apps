@@ -8,6 +8,7 @@ from typing import Any
 
 MAX_FRAME=4096
 APP_DIR=Path(os.environ.get("LOCALAPPDATA",Path.home()))/"SmartDispenserTopup"
+MACHINE_CONFIG_PATH=Path(os.environ.get("PROGRAMDATA",r"C:\ProgramData"))/"SmartDispenser"/"Topup"/"config.json"
 PROVISION_FILE="topup.provisioning.json"
 
 class TopupError(RuntimeError): pass
@@ -44,11 +45,11 @@ def wallet_from_dict(v:dict[str,Any])->Wallet:
 
 class _DataBlob(ctypes.Structure):
  _fields_=[("cbData",ctypes.c_ulong),("pbData",ctypes.POINTER(ctypes.c_byte))]
-def _dpapi(value:bytes,protect:bool)->bytes:
+def _dpapi(value:bytes,protect:bool,machine:bool=False)->bytes:
  if os.name!="nt": raise TopupError("Penyimpanan kredensial hanya didukung pada Windows")
  raw=ctypes.create_string_buffer(value); source=_DataBlob(len(value),ctypes.cast(raw,ctypes.POINTER(ctypes.c_byte))); target=_DataBlob()
  crypt32=ctypes.windll.crypt32; kernel32=ctypes.windll.kernel32
- if protect: ok=crypt32.CryptProtectData(ctypes.byref(source),"SmartDispenser Topup",None,None,None,0,ctypes.byref(target))
+ if protect: ok=crypt32.CryptProtectData(ctypes.byref(source),"SmartDispenser Topup",None,None,None,4 if machine else 0,ctypes.byref(target))
  else: ok=crypt32.CryptUnprotectData(ctypes.byref(source),None,None,None,None,0,ctypes.byref(target))
  if not ok: raise TopupError("Windows gagal melindungi konfigurasi")
  try: return ctypes.string_at(target.pbData,target.cbData)
@@ -58,11 +59,13 @@ def save_config(config:dict[str,Any]):
  if config.get("operator_pin") is not None:public["operator_pin_secret"]=base64.b64encode(_dpapi(str(config["operator_pin"]).encode(),True)).decode()
  (APP_DIR/"config.json").write_text(json.dumps(public),encoding="utf-8")
 def load_config()->dict[str,Any]|None:
- path=APP_DIR/"config.json"
- if not path.exists(): return None
- raw=json.loads(path.read_text(encoding="utf-8")); raw["app_password"]=_dpapi(base64.b64decode(raw.pop("app_secret")),False).decode()
- if "operator_pin_secret" in raw:raw["operator_pin"]=_dpapi(base64.b64decode(raw.pop("operator_pin_secret")),False).decode()
- return raw
+ for path in (MACHINE_CONFIG_PATH,APP_DIR/"config.json"):
+  if not path.exists():continue
+  raw=json.loads(path.read_text(encoding="utf-8")); machine=raw.get("scope")=="machine"
+  raw["app_password"]=_dpapi(base64.b64decode(raw.pop("app_secret")),False,machine).decode()
+  if "operator_pin_secret" in raw:raw["operator_pin"]=_dpapi(base64.b64decode(raw.pop("operator_pin_secret")),False,machine).decode()
+  return raw
+ return None
 def load_provisioning_config()->dict[str,Any]:
  base=Path(sys.executable).resolve().parent if getattr(sys,"frozen",False) else Path(__file__).resolve().parent
  path=base/PROVISION_FILE

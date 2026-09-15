@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import ctypes
 import os
 import json
 import re
@@ -17,6 +19,44 @@ from perso_core import PersoSimulator, ProtocolError, decode_frames_resilient, e
 
 
 WIB = timezone(timedelta(hours=7), name="WIB")
+MACHINE_CONFIG_PATH = Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "SmartDispenser" / "Perso" / "config.json"
+
+
+class _DataBlob(ctypes.Structure):
+    _fields_ = [("cbData", ctypes.c_ulong), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+
+def unprotect_machine_secret(value: str) -> str:
+    """Decrypt an installer credential protected for this Windows machine."""
+    if os.name != "nt":
+        raise RuntimeError("Machine Database credentials require Windows.")
+    encrypted = base64.b64decode(value)
+    raw = ctypes.create_string_buffer(encrypted)
+    source = _DataBlob(len(encrypted), ctypes.cast(raw, ctypes.POINTER(ctypes.c_byte)))
+    target = _DataBlob()
+    if not ctypes.windll.crypt32.CryptUnprotectData(
+        ctypes.byref(source), None, None, None, None, 0, ctypes.byref(target)
+    ):
+        raise RuntimeError("Windows could not decrypt the Database configuration.")
+    try:
+        return ctypes.string_at(target.pbData, target.cbData).decode("utf-8")
+    finally:
+        ctypes.windll.kernel32.LocalFree(target.pbData)
+
+
+def read_machine_database_config(path: Path = MACHINE_CONFIG_PATH) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    required = ("host", "port", "app_user", "app_secret")
+    if any(not raw.get(key) for key in required):
+        raise RuntimeError("Machine Database configuration is incomplete.")
+    return {
+        "host": str(raw["host"]),
+        "port": int(raw["port"]),
+        "user": str(raw["app_user"]),
+        "password": unprotect_machine_secret(str(raw["app_secret"])),
+    }
 
 
 def format_wib_datetime(value: Any, fallback: str = "—") -> str:
@@ -300,11 +340,12 @@ class PersoApp(tk.Tk):
         # Perso memakai akun MySQL khusus dengan akses terbatas, bukan root.
         # Kredensial berasal dari environment Windows dan tidak ditampilkan
         # di UI, audit, source code, atau EXE.
-        mysql_user = read_user_environment("SMARTDISPENSER_MYSQL_USER")
-        mysql_password = read_user_environment("SMARTDISPENSER_MYSQL_PASSWORD")
+        machine_database = read_machine_database_config()
+        mysql_user = machine_database["user"] if machine_database else read_user_environment("SMARTDISPENSER_MYSQL_USER")
+        mysql_password = machine_database["password"] if machine_database else read_user_environment("SMARTDISPENSER_MYSQL_PASSWORD")
         self.database_config = {
-            "host": "127.0.0.1",
-            "port": 3306,
+            "host": machine_database["host"] if machine_database else "127.0.0.1",
+            "port": machine_database["port"] if machine_database else 3306,
             "user": mysql_user,
             "password": mysql_password,
             "database": "Perso_database",

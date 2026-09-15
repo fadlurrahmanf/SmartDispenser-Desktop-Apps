@@ -23,6 +23,23 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Security
+
+if ($AdminPassword -eq "__SMARTDISPENSER_EMPTY_PASSWORD__") {
+    $AdminPassword = ""
+}
+
+$diagnosticDirectory = Join-Path $env:ProgramData "SmartDispenser"
+$diagnosticLog = Join-Path $diagnosticDirectory "topup-installer-database.log"
+New-Item -ItemType Directory -Path $diagnosticDirectory -Force | Out-Null
+"[$(Get-Date -Format o)] Topup database provisioning started." | Set-Content -LiteralPath $diagnosticLog -Encoding UTF8
+trap {
+    "[$(Get-Date -Format o)] $($_ | Out-String)" | Add-Content -LiteralPath $diagnosticLog -Encoding UTF8
+    if ($_.ScriptStackTrace) {
+        $_.ScriptStackTrace | Add-Content -LiteralPath $diagnosticLog -Encoding UTF8
+    }
+    exit 1
+}
 
 if ($SuccessMarker -and (Test-Path -LiteralPath $SuccessMarker)) {
     Remove-Item -LiteralPath $SuccessMarker -Force
@@ -101,12 +118,12 @@ function ConvertTo-Hex([byte[]]$Bytes) {
     return -join ($Bytes | ForEach-Object { $_.ToString("x2") })
 }
 
-function Protect-ForCurrentUser([string]$Value) {
+function Protect-ForMachine([string]$Value) {
     $plain = [Text.Encoding]::UTF8.GetBytes($Value)
     $protected = [Security.Cryptography.ProtectedData]::Protect(
         $plain,
         $null,
-        [Security.Cryptography.DataProtectionScope]::CurrentUser
+        [Security.Cryptography.DataProtectionScope]::LocalMachine
     )
     return [Convert]::ToBase64String($protected)
 }
@@ -202,15 +219,16 @@ FLUSH PRIVILEGES;
     }
 
     if (-not $SkipConfigWrite) {
-        $configDirectory = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "SmartDispenserTopup"
+        $configDirectory = Join-Path $env:ProgramData "SmartDispenser\Topup"
         New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
         $config = [ordered]@{
             host = $HostName
             port = $Port
             admin_user = "root"
             app_user = $appUser
-            app_secret = Protect-ForCurrentUser $appPassword
-            operator_pin_secret = Protect-ForCurrentUser $OperatorPin
+            scope = "machine"
+            app_secret = Protect-ForMachine $appPassword
+            operator_pin_secret = Protect-ForMachine $OperatorPin
         }
         $configPath = Join-Path $configDirectory "config.json"
         $configTempPath = Join-Path $configDirectory "config.json.new"
@@ -220,6 +238,7 @@ FLUSH PRIVILEGES;
 
     if ($SuccessMarker) {
         [IO.File]::WriteAllText($SuccessMarker, "database-ready", [Text.UTF8Encoding]::new($false))
+        "[$(Get-Date -Format o)] Topup database provisioning verified." | Add-Content -LiteralPath $diagnosticLog -Encoding UTF8
     }
 }
 finally {
