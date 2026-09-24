@@ -21,18 +21,24 @@ class TopupRuntime:
     def __init__(self) -> None:
         self.ready = threading.Event()
         self.closed = False
+        self.startup_error: BaseException | None = None
         self.app: TopupConsole | None = None
         self.thread = threading.Thread(target=self._run, name="topup-backend")
         self.thread.start()
-        if not self.ready.wait(15):
-            raise RuntimeError("Topup backend did not start.")
+        if not self.ready.wait(60):
+            detail = f": {self.startup_error}" if self.startup_error else " after 60 seconds"
+            raise RuntimeError(f"Topup backend did not start{detail}.")
 
     def _run(self) -> None:
-        self.app = TopupConsole(headless=True)
-        # Signal only after Tk has entered its own event queue. Calls made
-        # before this point can fail even though the root object exists.
-        self.app.after(0, self.ready.set)
-        self.app.mainloop()
+        try:
+            self.app = TopupConsole(headless=True)
+            # Signal only after Tk has entered its own event queue. Calls made
+            # before this point can fail even though the root object exists.
+            self.app.after(0, self.ready.set)
+            self.app.mainloop()
+        except BaseException as error:
+            self.startup_error = error
+            self.ready.set()
 
     def call(self, function: Callable[[TopupConsole], Any], timeout: float = 8.0) -> Any:
         if self.closed or self.app is None:
