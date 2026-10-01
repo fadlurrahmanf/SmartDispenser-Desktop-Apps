@@ -1,5 +1,5 @@
 #define AppName "SmartDispenser Perso"
-#define AppVersion "1.0.2"
+#define AppVersion "1.0.5"
 #define AppPublisher "SmartDispenser"
 #define AppExeName "SmartDispenserPerso.exe"
 
@@ -28,9 +28,12 @@ SetupLogging=yes
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "..\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; Perso memakai paket one-folder. EXE dan seluruh runtime _internal harus
+; dipasang bersama agar WebView/Tcl tersedia pada komputer baru.
+Source: "..\release_v104\SmartDispenserPerso\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "configure_database.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "install_prerequisites.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
+Source: "schema.sql"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "prerequisites\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "prerequisites\mariadb-11.8.9-winx64.msi"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "prerequisites\ch340\*"; DestDir: "{tmp}\ch340"; Flags: recursesubdirs createallsubdirs deleteafterinstall
@@ -45,7 +48,7 @@ Name: "desktopicon"; Description: "Buat shortcut di Desktop"; GroupDescription: 
 [Run]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{tmp}\install_prerequisites.ps1"" -WebViewInstaller ""{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"" -DriverInf ""{tmp}\ch340\CH341SER.INF"" -SuccessMarker ""{tmp}\perso-prerequisites-ready.marker"""; StatusMsg: "Memasang dan memverifikasi WebView2 serta driver CH340..."; Flags: waituntilterminated runhidden; Check: not SkipPrerequisites; AfterInstall: VerifyPrerequisiteInstallation
 Filename: "{sys}\msiexec.exe"; Parameters: "/i ""{tmp}\mariadb-11.8.9-winx64.msi"" /qn /norestart PASSWORD=""{code:GetDatabaseAdminPassword}"" SERVICENAME=SmartDispenserMariaDB PORT=3306 ADDLOCAL=DBInstance,Client,MYSQLSERVER,SharedLibraries REMOVE=DEVEL,HeidiSQL"; StatusMsg: "Memasang Database lokal MariaDB..."; Flags: waituntilterminated runhidden dontlogparameters; Check: InstallLocalDatabase
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{tmp}\configure_database.ps1"" -AdminPassword ""{code:GetDatabaseAdminPassword}"" -SuccessMarker ""{tmp}\perso-database-ready.marker"""; StatusMsg: "Membuat dan memverifikasi Database aplikasi Perso..."; Flags: waituntilterminated runhidden dontlogparameters; Check: ConfigureDatabase; AfterInstall: VerifyDatabaseProvisioning
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{tmp}\configure_database.ps1"" -SchemaPath ""{tmp}\schema.sql"" -AdminPassword ""{code:GetDatabaseAdminPassword}"" -SuccessMarker ""{tmp}\perso-database-ready.marker"""; StatusMsg: "Membuat dan memverifikasi Database aplikasi Perso..."; Flags: waituntilterminated runhidden dontlogparameters; Check: ConfigureDatabase; AfterInstall: VerifyDatabaseProvisioning
 Filename: "{app}\{#AppExeName}"; Description: "Jalankan SmartDispenser Perso"; Flags: nowait postinstall skipifsilent
 
 [Code]

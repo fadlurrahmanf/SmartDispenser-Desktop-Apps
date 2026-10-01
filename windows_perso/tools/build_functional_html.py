@@ -121,19 +121,23 @@ template = replace_once(
 
   startBackendBridge() {
     var self = this;
+    this.backendPending = false;
     this.refreshBackend();
-    this.backendTimer = setInterval(function () { self.refreshBackend(); }, 300);
+    this.backendTimer = setInterval(function () { self.refreshBackend(); }, 350);
   }
 
   async refreshBackend() {
     if (!window.pywebview || !window.pywebview.api) return;
+    if (this.backendPending) return;
     var active = document.activeElement;
     while (active && active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement;
     if ((active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) || Date.now() < (window.__persoCustomerEditingUntil || 0)) return;
+    this.backendPending = true;
     try {
       var data = await window.pywebview.api.get_state();
       this.applyBackend(data);
     } catch (error) { console.error("Perso bridge state failed", error); }
+    finally { this.backendPending = false; }
   }
 
   applyBackend(data) {
@@ -388,6 +392,10 @@ template = template.replace(
 return_anchor = '''      closeDialog: function () { self.setState({ dialog: "none" }); },
     };'''
 return_actions = '''      closeDialog: function () { self.setState({ dialog: "none" }); },
+      masterHoldClick: function () {
+        var view = (self.state.backend && self.state.backend.view) || {};
+        self.bridgeAction(view.masterHoldActive ? "master_hold_stop" : "master_hold_start");
+      },
       testAction: function () { self.bridgeAction("test_start"); },
       testStop: function () { self.bridgeAction("test_stop"); },
       ownerAction: function () { self.bridgeAction("owner_start"); },
@@ -412,6 +420,18 @@ return_actions = '''      closeDialog: function () { self.setState({ dialog: "no
       },
     };'''
 template = replace_once(template, return_anchor, return_actions, "live action bindings")
+
+# A press-and-hold control was present in the static mock but had no WebView
+# bridge binding.  Polling may also re-render the control before the pointer
+# is released, cancelling a genuine long press.  Use a deliberate start/cancel
+# confirmation instead; the Board still requires the candidate card to remain
+# present until the ten-second commit is sent.
+template = replace_once(
+    template,
+    '<button type="button" class="btn btn-primary btn-block" disabled="{{ s.holdDisabled }}" style="justify-content: center; gap: 8px; {{ s.holdFlash }}"><i class="ph ph-fingerprint" style="font-size: 16px;"></i>{{ s.holdLabel }}</button>',
+    '<button type="button" class="btn btn-primary btn-block" disabled="{{ s.holdDisabled }}" sc-camel-on-click="{{ masterHoldClick }}" style="justify-content:center;gap:8px;{{ s.holdFlash }}"><i class="ph ph-fingerprint" style="font-size:16px;"></i>{{ s.holdLabel }}</button>',
+    "master registration WebView action",
+)
 
 template = replace_once(
     template,
@@ -611,13 +631,15 @@ document.addEventListener("input", function (event) {
     var searchValue = target.value;
     var searchSequence = (window.__persoSearchSequence || 0) + 1;
     window.__persoSearchSequence = searchSequence;
-    if (window.pywebview && window.pywebview.api) {
+    clearTimeout(window.__persoSearchTimer);
+    window.__persoSearchTimer = setTimeout(function () {
+      if (!window.pywebview || !window.pywebview.api) return;
       Promise.resolve(window.pywebview.api.action("customer_search", { term: searchValue })).then(function (data) {
         if (searchSequence === window.__persoSearchSequence && window.__persoApplyBackend) {
           window.__persoApplyBackend(data);
         }
       }).catch(function (error) { console.error("Customer realtime search failed", error); });
-    }
+    }, 220);
     return;
   }
   if (!target.matches("[data-customer-field]")) return;

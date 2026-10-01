@@ -1129,6 +1129,9 @@ class TopupConsole(tk.Tk):
         release = ttk.Button(manage, text="Release Reserved", command=lambda: self.change("release_reserved", None), style="Dark.TButton")
         release.pack(side="left")
         self.mutation_buttons.append(release)
+        reset_daily = ttk.Button(manage, text="Reset Kuota Hari Ini", command=lambda: self.change("reset_daily_usage", None), style="Dark.TButton")
+        reset_daily.pack(side="left", padx=(7, 0))
+        self.mutation_buttons.append(reset_daily)
 
     def _build_history(self) -> None:
         page = self.pages["history"]
@@ -1653,6 +1656,7 @@ class TopupConsole(tk.Tk):
             "set_active": "change card status",
             "set_schedule": f"set schedule to {SCHEDULES.get(int(value), 'Unknown')}",
             "release_reserved": f"release {before.reserved} L reserved balance",
+            "reset_daily_usage": f"reset pemakaian harian {before.used_today} / 30 L ke 0 / 30 L",
         }
         if not messagebox.askyesno("Confirm Topup", f"Confirm {labels[action]}?\n\nBalance before: {before.balance} L", parent=self):
             return
@@ -1661,6 +1665,9 @@ class TopupConsole(tk.Tk):
     def change_confirmed(self, action: str, value: Any) -> None:
         if not self.store or not self.reader or not self.wallet or not self._session_ready():
             self._finish_error(TopupError("Read a card in an active master session first"))
+            return
+        if action == "reset_daily_usage" and not getattr(self.reader, "supports_daily_usage_reset", False):
+            self._finish_error(TopupError("Board Topup belum mendukung reset kuota harian. Perbarui firmware Board terlebih dahulu."))
             return
         before = self.wallet
         operation_id = new_request_id()
@@ -1672,7 +1679,11 @@ class TopupConsole(tk.Tk):
             if verified != expected:
                 raise TopupError("Final read-back does not match; transaction requires inspection")
             self.store.transaction(self.operator_id, operation_id, action, before, verified, value)
-            self.store.audit(self.operator_id, action, verified.card_reference, f"balance {before.balance}->{verified.balance}; revision {before.revision}->{verified.revision}")
+            if action == "reset_daily_usage":
+                detail = f"daily usage {before.used_today}/30->{verified.used_today}/30; saldo {verified.balance} L tidak berubah"
+            else:
+                detail = f"balance {before.balance}->{verified.balance}; revision {before.revision}->{verified.revision}"
+            self.store.audit(self.operator_id, action, verified.card_reference, detail)
             return verified
 
         def complete(wallet: Wallet) -> None:

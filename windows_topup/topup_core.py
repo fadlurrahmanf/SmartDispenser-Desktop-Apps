@@ -77,7 +77,7 @@ def load_provisioning_config()->dict[str,Any]:
  return raw
 
 class SimulationReader:
- def __init__(self): self.wallet=None; self.master_unlocked=False; self.done={}; self.card_test_active=False; self.card_watch_active=False; self._events=queue.Queue()
+ def __init__(self): self.wallet=None; self.master_unlocked=False; self.done={}; self.card_test_active=False; self.card_watch_active=False; self.supports_daily_usage_reset=True; self._events=queue.Queue()
  def enroll_master(self): self.master_unlocked=True
  def lock_session(self): self.master_unlocked=False
  def unlock_master(self): self.master_unlocked=True
@@ -120,12 +120,17 @@ class SimulationReader:
   elif action=="release_reserved":
    if not w.reserved: raise TopupError("Tidak ada cadangan")
    w=Wallet(w.card_reference,w.balance+w.reserved,w.active,w.schedule,w.used_today,0,False,w.revision+1)
+  elif action=="reset_daily_usage":
+   # Kuota pengambilan harian adalah counter terpisah dari saldo. Reset ini
+   # tidak mengubah saldo, status, jadwal, atau cadangan transaksi kartu.
+   w=Wallet(w.card_reference,w.balance,w.active,w.schedule,0,w.reserved,w.legacy,w.revision+1)
   else: raise TopupError("Aksi tidak didukung")
   self.wallet=self.done[request_id]=w; return w
 
 class SerialReaderAdapter:
  def __init__(self,port,baudrate=115200):
   self.port,self.baudrate,self.serial,self.master_unlocked,self._request_lock=port,baudrate,None,False,threading.Lock()
+  self.supports_daily_usage_reset=False
   self._responses=queue.Queue();self._events=queue.Queue();self._rx_stop=threading.Event();self._rx_thread=None
  def connect(self):
   try: import serial
@@ -142,7 +147,9 @@ class SerialReaderAdapter:
   # CH340 may reset or expose the board's startup banner when COM opens.
   # Give firmware time to finish setup; _request then ignores unrelated lines.
   time.sleep(.25)
-  if self._request("hello",{},4).get("bridge")!="topup-v1": raise TopupError("Bridge alat Topup tidak sesuai")
+  hello=self._request("hello",{},4)
+  if hello.get("bridge")!="topup-v1": raise TopupError("Bridge alat Topup tidak sesuai")
+  self.supports_daily_usage_reset="reset_used" in hello.get("features","").split(",")
   # Sama seperti startup Perso: setiap koneksi aplikasi mengunci sesi lama.
   # Master harus diangkat lalu ditempel lagi sebelum workspace dibuka.
   self.lock_session()
@@ -247,8 +254,16 @@ class SerialReaderAdapter:
   raise last_error or TopupError("Board tidak mengonfirmasi pemantauan kartu")
  def stop_card_watch(self):return self._request("watch_stop",{})
  def mutate(self,request_id,action,value=None):
-  commands={"balance_adjust":"adjust","set_active":"active","set_schedule":"schedule","upgrade":"upgrade","release_reserved":"release"}
-  data=self._request(commands[action],{"value":value,"operation_id":request_id})
+  commands={"balance_adjust":"adjust","set_active":"active","set_schedule":"schedule","upgrade":"upgrade","release_reserved":"release","reset_daily_usage":"reset_used"}
+  # RELEASE memulihkan seluruh saldo cadangan yang sudah tersimpan di kartu.
+  # Firmware Board yang sedang digunakan tetap mensyaratkan argumen ketiga
+  # pada semua perintah mutasi, tetapi mengabaikannya untuk RELEASE. Kirim 0
+  # secara eksplisit agar command menjadi `RELEASE 0`, bukan `RELEASE` yang
+  # ditolak sebagai "value required".
+  # Board mengharapkan parameter angka pada command mutasi. RESET_USED dan
+  # RELEASE mengabaikan nilainya, tetapi 0 menjaga wire protocol konsisten.
+  fields={"operation_id":request_id,"value":0 if action in ("release_reserved","reset_daily_usage") else value}
+  data=self._request(commands[action],fields)
   return Wallet(canonical_card_reference(data["reference"]),int(data["balance"]),data["active"]=="1",int(data["schedule"]),int(data["used"]),int(data["reserved"]),data["legacy"]=="1",int(data["revision"]))
 
 class MySqlStore:

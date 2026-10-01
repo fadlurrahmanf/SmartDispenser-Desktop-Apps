@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sys
 import threading
-import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -161,7 +160,9 @@ class Api:
                 app.cancel_hold()
 
         self.runtime.call(run)
-        time.sleep(0.08)
+        # `runtime.call` telah menunggu callback selesai di event loop Tk.
+        # Jangan menambah sleep pada setiap klik: itu membuat UI WebView
+        # terasa lambat dan memperbesar antrean polling status.
         return self.get_state()
 
     def _snapshot(self, app: PersoApp) -> dict[str, Any]:
@@ -225,6 +226,28 @@ class Api:
                 "lampColor": lamp_color,
                 "lampStyle": lamp_style,
             })
+            if screen == "gate":
+                # WebView can re-render while a pointer is held.  A browser
+                # press/release gesture therefore is not a reliable way to
+                # express the intentional 10-second master confirmation.
+                # Keep the card-presence safety check in PersoApp/firmware,
+                # but show an explicit progress state and a cancel action.
+                seconds = max(0, min(10, int(app.hold_seconds)))
+                active = app.hold_command == "register_master_commit"
+                view.update({
+                    "showHold": True,
+                    "masterCardPresent": bool(app.master_registration_card_present),
+                    "masterHoldActive": active,
+                    "holdDisabled": not bool(app.master_registration_card_present) and not active,
+                    "holdLabel": "Batalkan pendaftaran" if active else "Mulai konfirmasi 10 detik",
+                    "holdHint": (
+                        f"Pendaftaran berjalan: {seconds} / 10 detik. Kartu wajib tetap ditempel."
+                        if active else
+                        "Tempel kartu baru terlebih dahulu. Setelah terdeteksi, mulai konfirmasi dan biarkan kartu tetap menempel selama 10 detik."
+                    ),
+                    "holdBar": f"height:100%;width:{seconds * 10}%;background:var(--color-accent);",
+                    "holdFlash": "animation:flash .9s ease-in-out infinite;" if active else "",
+                })
         elif screen == "test":
             view.update({
                 "result": app.card_test_status.get(),

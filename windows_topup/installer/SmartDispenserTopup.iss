@@ -1,5 +1,5 @@
 #define AppName "SmartDispenser Topup"
-#define AppVersion "1.0.2"
+#define AppVersion "1.0.3"
 #define AppPublisher "SmartDispenser"
 #define AppExeName "SmartDispenserTopup.exe"
 
@@ -28,7 +28,9 @@ SetupLogging=yes
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "..\release_machine_config_v12\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; Paket Topup saat ini adalah PyInstaller one-folder. Seluruh _internal wajib
+; ikut dipasang; EXE saja tidak dapat dijalankan.
+Source: "..\release\SmartDispenserTopup\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "configure_database.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "install_prerequisites.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "..\schema.sql"; DestDir: "{tmp}"; Flags: deleteafterinstall

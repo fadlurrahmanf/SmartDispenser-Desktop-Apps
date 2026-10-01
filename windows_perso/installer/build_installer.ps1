@@ -54,7 +54,7 @@ if ($driverSignature.Status -ne "Valid") {
     throw "CH340 driver catalog signature is not valid: $($driverSignature.Status)."
 }
 
-$appExe = Join-Path $projectDir "release\SmartDispenserPerso.exe"
+$appExe = Join-Path $projectDir "release_v104\SmartDispenserPerso\SmartDispenserPerso.exe"
 if (-not (Test-Path -LiteralPath $appExe)) {
     throw "Application EXE is missing: $appExe. Run ..\build.ps1 first."
 }
@@ -78,4 +78,7 @@ if ($LASTEXITCODE -ne 0) {
 
 $setup = Join-Path $outputDir "SmartDispenserPersoSetup.exe"
 Write-Host "Built: $setup"
-Get-FileHash -LiteralPath $setup -Algorithm SHA256
+$hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+$hashFile = Join-Path $outputDir "SmartDispenserPersoSetup.sha256"
+Set-Content -LiteralPath $hashFile -Value "$hash  SmartDispenserPersoSetup.exe" -Encoding ascii
+Write-Host "SHA256: $hash"

@@ -12,7 +12,10 @@ class InstallerContractTests(unittest.TestCase):
         setup = (ROOT / "installer" / "SmartDispenserPerso.iss").read_text(encoding="utf-8")
 
         self.assertIn("Wait-ForDatabase", script)
-        self.assertIn("Perso application account verification failed", script)
+        self.assertIn("[string]$SchemaPath", script)
+        self.assertIn("Get-Content -LiteralPath $SchemaPath -Raw", script)
+        self.assertIn("Perso schema installation failed", script)
+        self.assertIn("Perso application schema/account verification failed", script)
         self.assertIn("DataProtectionScope]::LocalMachine", script)
         self.assertIn('$env:ProgramData "SmartDispenser\\Perso"', script)
         self.assertIn("database-ready", script)
@@ -28,12 +31,16 @@ class InstallerContractTests(unittest.TestCase):
         self.assertIn("__SMARTDISPENSER_EMPTY_PASSWORD__", script)
         self.assertIn("Add-Type -AssemblyName System.Security", script)
         self.assertIn("perso-installer-database.log", script)
+        self.assertIn('Source: "schema.sql"; DestDir: "{tmp}"', setup)
+        self.assertIn('-SchemaPath ""{tmp}\\schema.sql""', setup)
 
     def test_setup_recognizes_xampp_and_explains_blank_password(self):
         setup = (ROOT / "installer" / "SmartDispenserPerso.iss").read_text(encoding="utf-8")
         self.assertIn("xampp\\mysql\\bin\\mysql.exe", setup)
         self.assertIn("XAMPP masih memakai root tanpa password", setup)
-        self.assertIn('#define AppVersion "1.0.2"', setup)
+        self.assertIn('#define AppVersion "1.0.5"', setup)
+        self.assertIn('Source: "..\\release_v104\\SmartDispenserPerso\\*"', setup)
+        self.assertIn('recursesubdirs createallsubdirs', setup)
 
 
 if __name__ == "__main__":

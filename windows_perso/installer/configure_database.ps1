@@ -1,5 +1,8 @@
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $true)]
+    [string]$SchemaPath,
+
     [Parameter(Mandatory = $false)]
     [string]$AdminPassword = "",
 
@@ -37,6 +40,9 @@ trap {
 
 if ($SuccessMarker -and (Test-Path -LiteralPath $SuccessMarker)) {
     Remove-Item -LiteralPath $SuccessMarker -Force
+}
+if (-not (Test-Path -LiteralPath $SchemaPath)) {
+    throw "Perso Database schema was not found: $SchemaPath"
 }
 
 foreach ($serviceName in @("SmartDispenserMariaDB", "MariaDB", "mysql")) {
@@ -133,8 +139,18 @@ try {
 
     $appUser = "perso_console_app"
     $appPassword = New-SecureAppPassword
+    $bootstrap = "CREATE DATABASE IF NOT EXISTS Perso_database CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    & $client "--defaults-extra-file=$defaultsFile" "--execute=$bootstrap"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Perso Database creation failed with exit code $LASTEXITCODE."
+    }
+
+    Get-Content -LiteralPath $SchemaPath -Raw | & $client "--defaults-extra-file=$defaultsFile" Perso_database
+    if ($LASTEXITCODE -ne 0) {
+        throw "Perso schema installation failed with exit code $LASTEXITCODE."
+    }
+
     $sql = @"
-CREATE DATABASE IF NOT EXISTS Perso_database CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '$appUser'@'127.0.0.1' IDENTIFIED BY '$appPassword';
 ALTER USER '$appUser'@'127.0.0.1' IDENTIFIED BY '$appPassword';
 CREATE USER IF NOT EXISTS '$appUser'@'localhost' IDENTIFIED BY '$appPassword';
@@ -160,9 +176,16 @@ FLUSH PRIVILEGES;
         "protocol=tcp"
     )
     [IO.File]::WriteAllLines($appDefaultsFile, $appDefaults, [Text.UTF8Encoding]::new($false))
-    & $client "--defaults-extra-file=$appDefaultsFile" "--batch" "--skip-column-names" "--execute=SELECT 1" Perso_database | Out-Null
+    $verification = @"
+SELECT COUNT(*) FROM audit_log;
+SELECT COUNT(*) FROM customers;
+SELECT COUNT(*) FROM personalization_runs;
+SELECT COUNT(*) FROM customer_cards;
+SELECT COUNT(*) FROM card_reference_allocations;
+"@
+    & $client "--defaults-extra-file=$appDefaultsFile" "--batch" "--skip-column-names" "--execute=$verification" Perso_database | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "Perso application account verification failed with exit code $LASTEXITCODE."
+        throw "Perso application schema/account verification failed with exit code $LASTEXITCODE."
     }
 
     if (-not $SkipEnvironmentWrite) {

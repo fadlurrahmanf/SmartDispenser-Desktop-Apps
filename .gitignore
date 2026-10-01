@@ -24,6 +24,8 @@ __pycache__/
 /backups/
 /windows_perso/installer/prerequisites/
 /windows_perso/installer/output/
+/windows_perso/build*/
+/windows_perso/dist*/
 /windows_perso/release*/
 /windows_topup/installer/prerequisites/
 /windows_topup/installer/output/

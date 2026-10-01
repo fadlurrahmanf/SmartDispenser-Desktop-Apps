@@ -137,7 +137,9 @@ class FunctionalStartupTest(unittest.TestCase):
         self.assertIn("Lepas kartu untuk selesai", html)
         self.assertIn("TAMBAH KUOTA", html)
         self.assertIn("KURANGI KUOTA", html)
-        self.assertIn(".tw-card-facts .tw-card-fact:first-child{display:none}", html)
+        self.assertIn("Terpakai hari ini", html)
+        self.assertIn("Cadangan", html)
+        self.assertIn("usedTodayLiter", html)
 
     def test_overview_does_not_repeat_startup_requirements(self):
         html = (Path(__file__).resolve().parents[1] / "tools" / "build_startup_html.py").read_text(encoding="utf-8")

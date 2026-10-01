@@ -63,7 +63,7 @@ if ($driverSignature.Status -ne "Valid") {
     throw "CH340 driver catalog signature is not valid: $($driverSignature.Status)."
 }
 
-$appExe = Join-Path $projectDir "release_installer_ready_v11\SmartDispenserTopup.exe"
+$appExe = Join-Path $projectDir "release\SmartDispenserTopup\SmartDispenserTopup.exe"
 if (-not (Test-Path -LiteralPath $appExe)) {
     throw "Application EXE is missing: $appExe. Build the Topup application first."
 }

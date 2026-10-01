@@ -6,7 +6,7 @@
 - Microsoft Edge WebView2 Runtime x64 melalui installer offline resmi Microsoft;
 - driver USB-Serial CH340 yang sesuai dengan reader Perso saat ini;
 - MariaDB lokal pada PC yang belum memiliki service MySQL/MariaDB;
-- Database `Perso_database` dan akun aplikasi dengan password acak;
+- Database `Perso_database`, seluruh tabel Perso, dan akun aplikasi dengan password acak;
 - shortcut Start Menu dan Desktop.
 
 WebView2 dan paket driver CH340 diverifikasi setelah pemasangan. Ketika Board
@@ -14,8 +14,9 @@ CH340 dihubungkan, Windows akan membuat COM Port secara otomatis; aplikasi
 kemudian mencari seluruh COM non-Bluetooth sampai menemukan respons Board Perso.
 
 Setup hanya dinyatakan berhasil setelah akun aplikasi dapat membuka
-`Perso_database`. Jika password `root` salah atau Database tidak siap, setup
-berhenti dengan pesan perbaikan dan tidak menjalankan aplikasi menggunakan
+`Perso_database` dan membaca seluruh tabel yang dibutuhkan aplikasi. Jika
+password `root` salah, Database tidak siap, atau skema tidak dapat dibuat,
+setup berhenti dengan pesan perbaikan dan tidak menjalankan aplikasi menggunakan
 konfigurasi lama.
 
 Installer meminta password administrator Database. Password akun aplikasi dibuat

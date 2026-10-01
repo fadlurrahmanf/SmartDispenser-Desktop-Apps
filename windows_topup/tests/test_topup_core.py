@@ -14,7 +14,7 @@ from app_perso_style import TopupConsole, topup_candidate_ports
 class FakeSerial:
  def __init__(self,lines): self.lines=list(lines);self.timeout=.25;self.is_open=True;self.written=b""
  def reset_input_buffer(self): pass
- def write(self,value): self.written=value
+ def write(self,value): self.written+=value
  def flush(self): pass
  def readline(self): return self.lines.pop(0) if self.lines else b""
 
@@ -58,6 +58,28 @@ class TopupCoreTest(unittest.TestCase):
   adapter.serial=FakeSerial([b"RES R OK reference=0000001F balance=20 active=1 schedule=1 used=0 reserved=0 legacy=0 revision=2\r\n"])
   wallet=adapter.read_wallet()
   self.assertEqual(wallet.card_reference,"CARD-0000001F")
+ def test_bridge_advertises_daily_usage_reset_capability(self):
+  adapter=SerialReaderAdapter("COM3")
+  adapter.serial=FakeSerial([b"RES H OK bridge=topup-v1 nfc=ready features=reset_used\r\n"])
+  hello=adapter._request("hello",{},.2)
+  adapter.supports_daily_usage_reset="reset_used" in hello.get("features","").split(",")
+  self.assertTrue(adapter.supports_daily_usage_reset)
+ def test_release_reserved_sends_firmware_compatible_zero_value(self):
+  adapter=SerialReaderAdapter("COM3")
+  adapter.serial=FakeSerial([b"RES r OK reference=0000001F balance=20 active=1 schedule=1 used=0 reserved=0 legacy=0 revision=3\r\n"])
+  wallet=adapter.mutate("release-card", "release_reserved")
+  self.assertEqual(wallet.reserved,0)
+  self.assertEqual(adapter.serial.written,b"!#REQ r RELEASE 0\n")
+ def test_reset_daily_usage_preserves_balance_and_sends_zero_value(self):
+  reader=SimulationReader();reader.present(balance=30);reader.unlock_master()
+  reader.wallet=Wallet("CARD-00000001",30,True,1,30,7,False,5)
+  reset=reader.mutate("reset-used", "reset_daily_usage")
+  self.assertEqual((reset.balance,reset.used_today,reset.reserved,reset.schedule),(30,0,7,1))
+  adapter=SerialReaderAdapter("COM3")
+  adapter.serial=FakeSerial([b"RES r OK reference=00000001 balance=30 active=1 schedule=1 used=0 reserved=7 legacy=0 revision=6\r\n"])
+  result=adapter.mutate("reset-used", "reset_daily_usage")
+  self.assertEqual(result.used_today,0)
+  self.assertEqual(adapter.serial.written,b"!#REQ r RESET_USED 0\n")
  def test_simulation_refuses_over_limit(self):
   reader=SimulationReader(); reader.present(balance=100); reader.unlock_master()
   with self.assertRaises(TopupError): reader.mutate("operation-2", "balance_adjust", 10)

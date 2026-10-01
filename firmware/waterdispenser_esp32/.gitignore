@@ -1,0 +1,5 @@
+.pio/
+.vscode/
+
+# Secret kartu disediakan lokal saja; jangan pernah dipaketkan.
+.private/
